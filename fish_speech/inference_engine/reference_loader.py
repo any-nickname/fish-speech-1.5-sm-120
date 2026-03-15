@@ -3,6 +3,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Callable, Literal, Tuple
 
+import numpy as np
+import soundfile as sf
 import torch
 import torchaudio
 from loguru import logger
@@ -114,12 +116,20 @@ class ReferenceLoader:
     def load_audio(self, reference_audio, sr):
         """
         Load the audio data from a file or bytes.
+        Uses soundfile directly to avoid torchcodec compatibility issues with PyTorch nightly.
         """
         if len(reference_audio) > 255 or not Path(reference_audio).exists():
             audio_data = reference_audio
             reference_audio = io.BytesIO(audio_data)
 
-        waveform, original_sr = torchaudio.load(reference_audio, backend=self.backend)
+        # Use soundfile directly instead of torchaudio.load
+        audio_np, original_sr = sf.read(reference_audio)
+
+        # Convert to torch tensor (channels, samples)
+        if audio_np.ndim == 1:
+            waveform = torch.from_numpy(audio_np).float().unsqueeze(0)
+        else:
+            waveform = torch.from_numpy(audio_np.T).float()
 
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
